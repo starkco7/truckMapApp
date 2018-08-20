@@ -1,6 +1,6 @@
 # truckMapApp
 Mr. Vaughn: 
-    Please be patient and read my code. I can code more neatly if you give me more time. Please contact me if you need to ask any questions
+    Please be patient and read my code. I can code more neatly if you give me more time. Please contact me (d77@live.de) if you need to ask any questions
     or if some feature does not work. As we devs say: "It works on my machine"
      
 ![it-works-on-my-machine](https://user-images.githubusercontent.com/42528802/44319702-75a2d000-a40b-11e8-9455-617c80963413.jpg)
