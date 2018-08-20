@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">davidTransflo</string>
+    <string name="title_activity_maps">Map</string>
+    <string name="tv_name">Emri:</string>
+    <string name="tv_surname">Mbiemri:</string>
+    <string name="tv_id">ID:</string>
+    <string name="tv_familyID">ID Familjare:</string>
+    <string name="btn">Kërko</string>
+    <string name="tv_search">Kërkimi Përfundoi:</string>
+    <string name="tv_father">Atësia:</string>
+    <string name="tv_mother">Amësia:</string>
+    <string name="tv_bday">Datëlindja:</string>
+    <string name="tv_fhead">Lidhja me KF:</string>
+    <string name="tv_1">KERKO SIPAS:</string>
+</resources>
