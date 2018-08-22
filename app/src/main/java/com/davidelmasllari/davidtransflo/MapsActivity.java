@@ -1,6 +1,7 @@
 package com.davidelmasllari.davidtransflo;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -11,11 +12,14 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -70,11 +74,21 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private Location currentLocation;
     private boolean trackingModeOn = false;
 
+
+    //for DelayTimer
+    private Handler handler;
+    private Runnable runnable;
+    private String SEARCH_DELAY = "search_delay";
+    private String INACTIVITY_DELAY = "inactivity_delay";
+    private String INFO_WINDOW_DELAY = "info_window_delay";
+    private volatile boolean didWeToggleDelay = false;
+    private boolean onmarkerclick = false;
+    //testcomment
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
-        mSearchText = (AutoCompleteTextView) findViewById(R.id.input_search);
+        mSearchText = findViewById(R.id.input_search);
         mGps = findViewById(R.id.ic_gps);
         trackingBtn = findViewById(R.id.tracking_mode);
 
@@ -93,8 +107,10 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         trackingModeOn = prefs.getBoolean("trackingModePref", false);
         if(!trackingModeOn){
             trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode));
+            didWeToggleDelay = false;
         } else {
             trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode_red));
+            didWeToggleDelay = true;
         }
 
         Button mapTypeBtn = findViewById(R.id.ic_maptype);
@@ -104,6 +120,49 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             mapTypeBtn.setBackground(getDrawable(R.drawable.ic_road_map));
         }
 
+        //edit Text
+        mSearchText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+                //start delay timer
+                startTrackingDelay(SEARCH_DELAY);
+                Log.d("dave_tag", "searchDelay onTextChanged");
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+
+            }
+        });
+        mSearchText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView textView, int actionId, KeyEvent keyEvent) {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH
+                        || actionId == EditorInfo.IME_ACTION_DONE
+                        || actionId == KeyEvent.ACTION_DOWN
+                        || actionId == KeyEvent.KEYCODE_ENTER) {
+
+                    //execute our method for searching
+                    geoLocate();
+                }
+
+                return false;
+            }
+        });
+
+        mSearchText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                //start delay timer
+                startTrackingDelay(SEARCH_DELAY);
+                Log.d("dave_tag", "searchDelay setOnClickListener");
+            }
+        });
 
         // Gps button to trigger Current Location
         mGps.setOnClickListener(new View.OnClickListener() {
@@ -127,6 +186,28 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         Log.d(TAG, "init: initializing");
         //when user clicks on marker, onMarkerClick is called
         mMap.setOnMarkerClickListener(this);
+/*        mMap.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
+            @Override
+            public void onCameraIdle() {
+                if(didWeToggleDelay && !onmarkerclick) {
+                    //start delay timer
+                    startTrackingDelay(INACTIVITY_DELAY);
+                    Log.d("dave_tag", "oncameraIdle");
+                }
+
+            }
+        });*/
+
+        mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
+            @Override
+            public void onMapClick(LatLng latLng) {
+                //if we click on map, cancel all timer delays
+                if(didWeToggleDelay && !onmarkerclick){
+                    startTrackingDelay(INACTIVITY_DELAY);
+                    Log.d("dave_tag", "onMApclick");
+                }
+            }
+        });
 /*        mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
             @Override
             public void onMapClick(LatLng latLng) {
@@ -143,22 +224,6 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 }
             }
         });*/
-        //todo put this onCreate ?
-        mSearchText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            @Override
-            public boolean onEditorAction(TextView textView, int actionId, KeyEvent keyEvent) {
-                if (actionId == EditorInfo.IME_ACTION_SEARCH
-                        || actionId == EditorInfo.IME_ACTION_DONE
-                        || actionId == KeyEvent.ACTION_DOWN
-                        || actionId == KeyEvent.KEYCODE_ENTER) {
-
-                    //execute our method for searching
-                    geoLocate();
-                }
-
-                return false;
-            }
-        });
 
         if(mMap != null){
             // Setting a custom info window adapter for the google map
@@ -189,29 +254,29 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         for (int i = 0; i < TruckStopGatheredDetails.truckstops.size(); i++) {
 
 
-        if(!searchString.equals("")) {
+            if(!searchString.equals("")) {
 
-            if (TruckStopGatheredDetails.truckstops.get(i).getCity().equalsIgnoreCase(searchString)) {
-                moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
-                                TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
-                        "searchString geoLocate");
-            } else if (TruckStopGatheredDetails.truckstops.get(i).getState().equalsIgnoreCase(searchString)) {
-                moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
-                                TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
-                        "searchString geoLocate");
-            } else if (TruckStopGatheredDetails.truckstops.get(i).getZip().equalsIgnoreCase(searchString)) {
-                moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
-                                TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
-                        "searchString geoLocate");
-            } else if (TruckStopGatheredDetails.truckstops.get(i).getName().toLowerCase().contains(searchString.toLowerCase())) {
-                moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
-                                TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
-                        "searchString geoLocate");
-            } else {
-                Log.d(TAG, "geoLocate: No Match Found");
-                //Toast.makeText(this, "No Match Found", Toast.LENGTH_SHORT).show();
+                if (TruckStopGatheredDetails.truckstops.get(i).getCity().equalsIgnoreCase(searchString)) {
+                    moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
+                                    TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
+                            "searchString geoLocate");
+                } else if (TruckStopGatheredDetails.truckstops.get(i).getState().equalsIgnoreCase(searchString)) {
+                    moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
+                                    TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
+                            "searchString geoLocate");
+                } else if (TruckStopGatheredDetails.truckstops.get(i).getZip().equalsIgnoreCase(searchString)) {
+                    moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
+                                    TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
+                            "searchString geoLocate");
+                } else if (TruckStopGatheredDetails.truckstops.get(i).getName().toLowerCase().contains(searchString.toLowerCase())) {
+                    moveCamera(new LatLng(TruckStopGatheredDetails.truckstops.get(i).getLat(),
+                                    TruckStopGatheredDetails.truckstops.get(i).getLng()), DEFAULT_ZOOM,
+                            "searchString geoLocate");
+                } else {
+                    Log.d(TAG, "geoLocate: No Match Found");
+                    //Toast.makeText(this, "No Match Found", Toast.LENGTH_SHORT).show();
+                }
             }
-        }
 
 
         }
@@ -360,8 +425,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         switch (requestCode) {
             case LOCATION_PERMISSION_REQUEST_CODE: {
                 if (grantResults.length > 0) {
-                    for (int i = 0; i < grantResults.length; i++) {
-                        if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                    for (int grantResult : grantResults) {
+                        if (grantResult != PackageManager.PERMISSION_GRANTED) {
                             mLocationPermissionGranted = false;
                             Log.d(TAG, "onRequestPermissionsResult: permission failed");
                             return;
@@ -377,21 +442,22 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
     //custom info Window view
+    @SuppressLint("SetTextI18n")
     private View infoWindowView(Marker arg0){
 
         // Getting view from the layout file info_window_layout
-        View v = getLayoutInflater().inflate(R.layout.windowlayout, null);
+        @SuppressLint("InflateParams") View v = getLayoutInflater().inflate(R.layout.windowlayout, null);
 
         // Getting the position from the marker
         LatLng latLng = arg0.getPosition();
 
-        TextView tvName = (TextView) v.findViewById(R.id.tv_name);
-        TextView tvAddress = (TextView) v.findViewById(R.id.tv_address);
-        TextView tvDist = (TextView) v.findViewById(R.id.tv_distance);
-        TextView tvCity = (TextView) v.findViewById(R.id.tv_city);
-        TextView tvState = (TextView) v.findViewById(R.id.tv_state);
-        TextView tvZip = (TextView) v.findViewById(R.id.tv_zip);
-        TextView tvOther = (TextView) v.findViewById(R.id.tv_other_info);
+        TextView tvName = v.findViewById(R.id.tv_name);
+        TextView tvAddress = v.findViewById(R.id.tv_address);
+        TextView tvDist = v.findViewById(R.id.tv_distance);
+        TextView tvCity = v.findViewById(R.id.tv_city);
+        TextView tvState = v.findViewById(R.id.tv_state);
+        TextView tvZip = v.findViewById(R.id.tv_zip);
+        TextView tvOther = v.findViewById(R.id.tv_other_info);
         for (int i = 0; i < TruckStopGatheredDetails.truckstops.size(); i++) {
             String truckName = TruckStopGatheredDetails.truckstops.get(i).getName();
             String truckAddress = TruckStopGatheredDetails.truckstops.get(i).getRawLine1();
@@ -483,6 +549,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     public void onResume() {
         super.onResume();
         //setUpMapIfNeeded();
+        initLocManager();
+
+    }
+
+    private void initLocManager(){
         //initialize location manager for tracking
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         if (locationManager != null) {
@@ -515,9 +586,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             Toast.makeText(this, "Loc manager is null", Toast.LENGTH_SHORT).show();
 
         }
-
     }
-
 
 
 
@@ -556,7 +625,12 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                         currentLocation.getLongitude(), MapsActivity.this);
             }
             marker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_clicked_truck));
+            if(didWeToggleDelay){
+                onmarkerclick = true;
+                startTrackingDelay(INFO_WINDOW_DELAY);
+                Log.d("dave_tag", "onmarkerClick");
 
+            }
 
         } else {
             Toast.makeText(this, "Your Location", Toast.LENGTH_SHORT).show();
@@ -587,26 +661,83 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     }
 
+    public void trackingOnclick(View view) {
+        trackingMode();
+    }
+
+    public void searchBtnOnclick(View view) {
+        geoLocate();
+    }
+
     private void trackingMode(){
         if(trackingModeOn){
             trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode));
             Toast.makeText(this, "Tracking Mode Off", Toast.LENGTH_SHORT).show();
             trackingModeOn = false;
             prefs.edit().putBoolean("trackingModePref",false).apply();
+            didWeToggleDelay = false;
         } else {
             trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode_red));
             Toast.makeText(this, "Tracking Mode ON", Toast.LENGTH_SHORT).show();
+            trackingModeOn = true;
+            prefs.edit().putBoolean("trackingModePref",true).apply();
+            didWeToggleDelay = true;
+        }
+
+    }
+    private void trackingMode(boolean bool){
+        if(!bool){
+            trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode));
+            trackingModeOn = false;
+            prefs.edit().putBoolean("trackingModePref",false).apply();
+        } else {
+            trackingBtn.setBackground(getDrawable(R.drawable.ic_tracking_mode_red));
             trackingModeOn = true;
             prefs.edit().putBoolean("trackingModePref",true).apply();
         }
 
     }
 
-    public void trackingOnclick(View view) {
-            trackingMode();
+
+    //tracking timer
+    //dissemble tracking mode in tracking on and off
+    //if onmapclick trOFF.
+    //cancel handler
+
+
+    private void startTrackingDelay(String delayType) {
+        //remove and reset delay
+        if(handler != null && runnable != null){
+            handler.removeCallbacks(runnable);
+            Log.d("dave_tag","removed callbacks");
+        }
+
+        //toggle tracking btn
+        trackingMode(false);
+
+
+        int interval=1;
+        if(delayType.equals(SEARCH_DELAY)){
+            interval = 30000;
+        } else if(delayType.equals(INACTIVITY_DELAY)){
+            interval = 5000;
+        } else if (delayType.equals(INFO_WINDOW_DELAY)){
+            interval = 15000;
+        }
+        handler = new Handler();
+        runnable = new Runnable() {
+            @Override
+            public void run() {
+                trackingMode();
+                onmarkerclick =false;
+            }
+        };
+
+        handler.postDelayed(runnable, interval);
     }
 
-    public void searchBtnOnclick(View view) {
-        geoLocate();
-    }
+
+
+
+
 }
